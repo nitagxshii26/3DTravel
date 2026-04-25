@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3DTravel</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #000; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 2.5;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    document.body.appendChild(renderer.domElement);
+
+    const loader = new THREE.TextureLoader();
+
+    // Earth sphere with diffuse, bump, and specular maps
+    const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+    const earthMaterial = new THREE.MeshPhongMaterial({
+      map: loader.load('textures/earth_daymap.jpg'),
+      bumpMap: loader.load('textures/earth_bumpmap.jpg'),
+      bumpScale: 0.05,
+      specularMap: loader.load('textures/earth_specularmap.jpg'),
+      specular: new THREE.Color(0x4488aa),
+    });
+    const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+    scene.add(earth);
+
+    // Cloud layer — slightly larger, semi-transparent
+    const cloudGeometry = new THREE.SphereGeometry(1.01, 64, 64);
+    const cloudMaterial = new THREE.MeshPhongMaterial({
+      alphaMap: loader.load('textures/earth_clouds.jpg'),
+      transparent: true,
+      opacity: 0.4,
+      depthWrite: false,
+    });
+    const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+    scene.add(clouds);
+
+    // Atmosphere glow — Fresnel shader on BackSide
+    const atmosGeometry = new THREE.SphereGeometry(1.15, 64, 64);
+    const atmosMaterial = new THREE.ShaderMaterial({
+      vertexShader: `
+        varying vec3 vNormal;
+        void main() {
+          vNormal = normalize(normalMatrix * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying vec3 vNormal;
+        void main() {
+          float intensity = pow(0.7 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.0);
+          gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
+        }
+      `,
+      blending: THREE.AdditiveBlending,
+      side: THREE.BackSide,
+      transparent: true,
+    });
+    const atmosphere = new THREE.Mesh(atmosGeometry, atmosMaterial);
+    scene.add(atmosphere);
+
+    // Starfield — 3000 random points
+    const starGeometry = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(3000 * 3);
+    for (let i = 0; i < starPositions.length; i++) {
+      starPositions[i] = (Math.random() - 0.5) * 400;
+    }
+    starGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.15, sizeAttenuation: true });
+    scene.add(new THREE.Points(starGeometry, starMaterial));
+
+    // Lighting: Sun directional + dim ambient
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    sunLight.position.set(5, 3, 5);
+    scene.add(sunLight);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.05));
+
+    // OrbitControls: auto-rotate + mouse drag
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.4;
+    controls.enableZoom = false;
+    controls.enablePan = false;
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      clouds.rotation.y += 0.0001;
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
