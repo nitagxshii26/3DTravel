@@ -383,7 +383,7 @@
           const curs=Object.values(c.currencies||{});
           setText('stat-currency',curs.map(x=>`${x.symbol||''} ${x.name}`).join(', ')||'—');
           const langs=Object.values(c.languages||{});
-          setText('stat-lang',langs.slice(0,2).join(', ')+(langs.length>2?'…':'')||'—');
+          setText('stat-lang',langs[0]||'—');
         }).catch(()=>{});
     }
 
