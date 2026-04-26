@@ -7,7 +7,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; }
-    canvas { display: block; }
+    canvas { display: block; touch-action: none; }
 
     #country-label {
       position: fixed;
@@ -24,15 +24,18 @@
 
     #info-panel {
       position: fixed;
-      top: 0; right: -380px;
-      width: 360px; height: 100%;
-      background: rgba(10,14,26,0.92);
+      top: 0; right: -105%;
+      width: min(360px, 100%);
+      height: 100%;
+      background: rgba(10,14,26,0.95);
       backdrop-filter: blur(16px);
       border-left: 1px solid rgba(255,255,255,0.1);
       transition: right 0.35s cubic-bezier(0.4,0,0.2,1);
       overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
       z-index: 100;
       color: #fff;
+      padding-bottom: env(safe-area-inset-bottom);
     }
     #info-panel.open { right: 0; }
 
@@ -40,12 +43,13 @@
       position: absolute; top: 16px; right: 16px;
       background: rgba(255,255,255,0.1);
       border: none; color: #fff;
-      width: 32px; height: 32px; border-radius: 50%;
+      width: 40px; height: 40px; border-radius: 50%;
       font-size: 18px; cursor: pointer;
       display: flex; align-items: center; justify-content: center;
       transition: background 0.2s;
+      -webkit-tap-highlight-color: transparent;
     }
-    #panel-close:hover { background: rgba(255,255,255,0.2); }
+    #panel-close:hover, #panel-close:active { background: rgba(255,255,255,0.2); }
 
     #panel-header {
       padding: 28px 24px 20px;
@@ -78,7 +82,8 @@
       cursor: pointer; letter-spacing: 0.3px;
       transition: opacity 0.2s, transform 0.1s;
     }
-    #see-more-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+    #see-more-btn:hover, #see-more-btn:active { opacity: 0.88; transform: translateY(-1px); }
+    #see-more-btn { -webkit-tap-highlight-color: transparent; }
 
     #travel-info { display: none; padding: 0 24px 28px; }
     #travel-info.visible { display: block; }
@@ -496,7 +501,7 @@
       buildPins(capitals);
     });
 
-    // ── Click → open panel ─────────────────────────────────
+    // ── Click / tap → open panel ───────────────────────────
     let mouseDownPos={x:0,y:0};
     renderer.domElement.addEventListener('mousedown',e=>{mouseDownPos={x:e.clientX,y:e.clientY};});
     renderer.domElement.addEventListener('click',e=>{
@@ -505,11 +510,21 @@
       const isState=stateData.some(s=>s.name===currentLabel);
       openPanel(isState?'United States':currentLabel, isState?'us':(countryCodeMap[currentLabel]||null));
     });
-    renderer.domElement.addEventListener('touchend',()=>{
+
+    // Touch tap: record start, detect country on touchstart, open panel on touchend if no drag
+    let touchStart={x:0,y:0};
+    renderer.domElement.addEventListener('touchstart',e=>{
+      const t=e.touches[0];
+      touchStart={x:t.clientX,y:t.clientY};
+    },{passive:true});
+    renderer.domElement.addEventListener('touchend',e=>{
+      const t=e.changedTouches[0];
+      const dx=Math.abs(t.clientX-touchStart.x), dy=Math.abs(t.clientY-touchStart.y);
+      if(dx>10||dy>10)return; // was a drag, not a tap
       if(!currentLabel)return;
       const isState=stateData.some(s=>s.name===currentLabel);
       openPanel(isState?'United States':currentLabel, isState?'us':(countryCodeMap[currentLabel]||null));
-    });
+    },{passive:true});
 
     // ── Hover / touch detection ────────────────────────────
     const raycaster=new THREE.Raycaster();
@@ -560,7 +575,14 @@
     }
 
     window.addEventListener('mousemove',e=>detectCountry(e.clientX,e.clientY));
-    window.addEventListener('touchstart',e=>{const t=e.touches[0]; detectCountry(t.clientX,t.clientY);},{passive:true});
+    // Touch move = drag to rotate (handled by OrbitControls), also update hover
+    renderer.domElement.addEventListener('touchmove',e=>{
+      const t=e.touches[0]; detectCountry(t.clientX,t.clientY);
+    },{passive:true});
+    // Detect country on initial touch so label shows before lifting finger
+    renderer.domElement.addEventListener('touchstart',e=>{
+      const t=e.touches[0]; detectCountry(t.clientX,t.clientY);
+    },{passive:true});
 
     // ── Render loop ────────────────────────────────────────
     const BASE_SCALE=0.022, BASE_DIST=INITIAL_DIST;
