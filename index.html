@@ -238,40 +238,93 @@
       hlTexture.needsUpdate = true;
     }
 
-    // ── Capital city pins ──────────────────────────────────
-    const pinMeshes = [];  // [{mesh, capital, country}] for raycasting
+    // ── Capital city flag pins (billboard sprites) ─────────
+    const pinSprites = [];  // [{sprite, capital, country, code}] for raycasting
+
+    // Shared canvas to draw flag + white border + drop shadow
+    function makeFlagTexture(code) {
+      const tex = new THREE.Texture();
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        const W = 72, H = 48;
+        c.width  = W + 8;
+        c.height = H + 8 + 10; // extra below for pin tail
+        const ctx = c.getContext('2d');
+
+        // Drop shadow
+        ctx.shadowColor = 'rgba(0,0,0,0.6)';
+        ctx.shadowBlur = 4;
+        ctx.shadowOffsetY = 2;
+
+        // White rounded border
+        ctx.fillStyle = '#fff';
+        roundRect(ctx, 2, 2, W + 4, H + 4, 4);
+        ctx.fill();
+
+        ctx.shadowColor = 'transparent';
+
+        // Flag image clipped to rounded rect
+        ctx.save();
+        roundRect(ctx, 4, 4, W, H, 3);
+        ctx.clip();
+        ctx.drawImage(img, 4, 4, W, H);
+        ctx.restore();
+
+        // Small triangle tail pointing down from center bottom of flag box
+        const cx = (W + 8) / 2;
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(cx - 5, H + 6);
+        ctx.lineTo(cx + 5, H + 6);
+        ctx.lineTo(cx,     H + 14);
+        ctx.closePath();
+        ctx.fill();
+
+        tex.image = c;
+        tex.needsUpdate = true;
+      };
+      img.src = `https://flagcdn.com/w80/${code}.png`;
+      return tex;
+    }
+
+    function roundRect(ctx, x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
 
     function buildPins(capitals) {
-      const pinMat  = new THREE.MeshBasicMaterial({ color: 0xffd700 });
-      const stemMat = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+      capitals.forEach(({ capital, country, lat, lng, code }) => {
+        if (!code) return;
 
-      capitals.forEach(({ capital, country, lat, lng }) => {
+        const tex = makeFlagTexture(code);
+        const mat = new THREE.SpriteMaterial({
+          map: tex,
+          transparent: true,
+          depthWrite: false,
+          sizeAttenuation: true,
+        });
+        const sprite = new THREE.Sprite(mat);
+
+        // Position just above surface, normal direction
         const pos = ll2xyz(lat, lng, 1.0);
         const normal = pos.clone().normalize();
+        // Float the sprite outward so the tail tip touches the surface
+        sprite.position.copy(pos).addScaledVector(normal, 0.12);
+        sprite.scale.set(0.12, 0.09, 1);
 
-        // Stem: thin cylinder pointing outward
-        const stemGeo = new THREE.CylinderGeometry(0.002, 0.002, 0.025, 6);
-        const stem = new THREE.Mesh(stemGeo, stemMat);
-
-        // Head: small sphere on top
-        const headGeo = new THREE.SphereGeometry(0.006, 8, 8);
-        const head = new THREE.Mesh(headGeo, pinMat);
-        head.position.y = 0.0175;
-
-        // Group them
-        const pin = new THREE.Group();
-        pin.add(stem);
-        pin.add(head);
-
-        // Place at surface and orient outward
-        pin.position.copy(pos);
-        pin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
-
-        // Offset the group up by half stem height so base sits on surface
-        pin.position.addScaledVector(normal, 0.0125);
-
-        scene.add(pin);
-        pinMeshes.push({ mesh: head, pin, capital, country, lat, lng });
+        scene.add(sprite);
+        pinSprites.push({ sprite, capital, country, code, lat, lng });
       });
     }
 
@@ -333,13 +386,12 @@
       mouse.y = -(clientY / innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
 
-      // Check capital pins first (enlarged hit radius)
-      raycaster.params.Points = { threshold: 0.01 };
-      const pinHeads = pinMeshes.map(p => p.mesh);
-      if (pinHeads.length) {
-        const pinHits = raycaster.intersectObjects(pinHeads);
+      // Check capital flag sprites — use intersectObjects (Sprite supports raycasting)
+      if (pinSprites.length) {
+        const sprites = pinSprites.map(p => p.sprite);
+        const pinHits = raycaster.intersectObjects(sprites);
         if (pinHits.length) {
-          const hit = pinMeshes.find(p => p.mesh === pinHits[0].object);
+          const hit = pinSprites.find(p => p.sprite === pinHits[0].object);
           if (hit) {
             const lbl = `${hit.capital} · ${hit.country}`;
             if (lbl !== currentLabel) {
@@ -347,16 +399,16 @@
               label.textContent = lbl;
               label.classList.add('visible');
               paintCountry(null);
-              // Highlight pin
-              pinMeshes.forEach(p => p.mesh.material.color.set(0xffd700));
-              hit.mesh.material.color.set(0xff4444);
+              pinSprites.forEach(p => { p.sprite.material.color.set(0xffffff); p.sprite.scale.set(0.12, 0.09, 1); });
+              hit.sprite.material.color.set(0xffdd00);
+              hit.sprite.scale.set(0.15, 0.112, 1);
             }
             return;
           }
         }
       }
-      // Reset pin colours if we're not hovering one
-      pinMeshes.forEach(p => p.mesh.material.color.set(0xffd700));
+      // Reset sprites when not hovering a pin
+      pinSprites.forEach(p => { p.sprite.material.color.set(0xffffff); p.sprite.scale.set(0.12, 0.09, 1); });
 
       const hits = raycaster.intersectObject(earth);
 
