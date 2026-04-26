@@ -238,6 +238,43 @@
       hlTexture.needsUpdate = true;
     }
 
+    // ── Capital city pins ──────────────────────────────────
+    const pinMeshes = [];  // [{mesh, capital, country}] for raycasting
+
+    function buildPins(capitals) {
+      const pinMat  = new THREE.MeshBasicMaterial({ color: 0xffd700 });
+      const stemMat = new THREE.MeshBasicMaterial({ color: 0xffa500 });
+
+      capitals.forEach(({ capital, country, lat, lng }) => {
+        const pos = ll2xyz(lat, lng, 1.0);
+        const normal = pos.clone().normalize();
+
+        // Stem: thin cylinder pointing outward
+        const stemGeo = new THREE.CylinderGeometry(0.002, 0.002, 0.025, 6);
+        const stem = new THREE.Mesh(stemGeo, stemMat);
+
+        // Head: small sphere on top
+        const headGeo = new THREE.SphereGeometry(0.006, 8, 8);
+        const head = new THREE.Mesh(headGeo, pinMat);
+        head.position.y = 0.0175;
+
+        // Group them
+        const pin = new THREE.Group();
+        pin.add(stem);
+        pin.add(head);
+
+        // Place at surface and orient outward
+        pin.position.copy(pos);
+        pin.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), normal);
+
+        // Offset the group up by half stem height so base sits on surface
+        pin.position.addScaledVector(normal, 0.0125);
+
+        scene.add(pin);
+        pinMeshes.push({ mesh: head, pin, capital, country, lat, lng });
+      });
+    }
+
     // ── Data stores ────────────────────────────────────────
     const countryData = [];
     const stateData   = [];
@@ -251,7 +288,8 @@
     Promise.all([
       fetch(GEO_COUNTRIES).then(r => r.json()),
       fetch(GEO_US_STATES).then(r => r.json()),
-    ]).then(([countries, usStates]) => {
+      fetch('capitals.json').then(r => r.json()),
+    ]).then(([countries, usStates, capitals]) => {
       // Country borders (dim white)
       const countryBorderGeo = buildBorderLines(countries, 1.002);
       scene.add(new THREE.LineSegments(countryBorderGeo,
@@ -264,7 +302,7 @@
         new THREE.LineBasicMaterial({ color: 0xffffff, opacity: 0.45, transparent: true })
       ));
 
-      // Build country lookup (exclude USA so states take over)
+      // Build country lookup
       countries.features.forEach(f => {
         if (!f.geometry) return;
         const name = f.properties.ADMIN || f.properties.name || 'Unknown';
@@ -281,6 +319,9 @@
         const polygons = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
         stateData.push({ name, polygons });
       });
+
+      // Place capital pins
+      buildPins(capitals);
     });
 
     // ── Hover / tap detection ──────────────────────────────
@@ -291,6 +332,32 @@
       mouse.x =  (clientX / innerWidth)  * 2 - 1;
       mouse.y = -(clientY / innerHeight) * 2 + 1;
       raycaster.setFromCamera(mouse, camera);
+
+      // Check capital pins first (enlarged hit radius)
+      raycaster.params.Points = { threshold: 0.01 };
+      const pinHeads = pinMeshes.map(p => p.mesh);
+      if (pinHeads.length) {
+        const pinHits = raycaster.intersectObjects(pinHeads);
+        if (pinHits.length) {
+          const hit = pinMeshes.find(p => p.mesh === pinHits[0].object);
+          if (hit) {
+            const lbl = `${hit.capital} · ${hit.country}`;
+            if (lbl !== currentLabel) {
+              currentLabel = lbl;
+              label.textContent = lbl;
+              label.classList.add('visible');
+              paintCountry(null);
+              // Highlight pin
+              pinMeshes.forEach(p => p.mesh.material.color.set(0xffd700));
+              hit.mesh.material.color.set(0xff4444);
+            }
+            return;
+          }
+        }
+      }
+      // Reset pin colours if we're not hovering one
+      pinMeshes.forEach(p => p.mesh.material.color.set(0xffd700));
+
       const hits = raycaster.intersectObject(earth);
 
       if (!hits.length) {
@@ -303,7 +370,7 @@
       const [lat, lng] = xyz2ll(hits[0].point);
       const pt = [lng, lat];
 
-      // Check US states first (they take priority over the country outline)
+      // Check US states first
       const state = stateData.find(({ polygons }) =>
         polygons.some(rings => pointInPolygon(pt, rings))
       );
@@ -322,19 +389,18 @@
         polygons.some(rings => pointInPolygon(pt, rings))
       );
 
-      const found = country;
-      if (!found) {
+      if (!country) {
         currentLabel = null;
         label.classList.remove('visible');
         paintCountry(null);
         return;
       }
 
-      if (found.name === currentLabel) return;
-      currentLabel = found.name;
-      label.textContent = found.name;
+      if (country.name === currentLabel) return;
+      currentLabel = country.name;
+      label.textContent = country.name;
       label.classList.add('visible');
-      paintCountry(found.polygons);
+      paintCountry(country.polygons);
     }
 
     window.addEventListener('mousemove', e => detectCountry(e.clientX, e.clientY));
