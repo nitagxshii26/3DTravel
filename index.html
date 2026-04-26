@@ -468,6 +468,7 @@
     const countryData=[], stateData=[];
     const label=document.getElementById('country-label');
     let currentLabel=null;
+    let hoveredPin=null;   // {country, code} of pin currently under cursor
     const countryCodeMap={};
 
     const GEO_COUNTRIES='https://raw.githubusercontent.com/datasets/geo-countries/master/data/countries.geojson';
@@ -506,6 +507,7 @@
     renderer.domElement.addEventListener('mousedown',e=>{mouseDownPos={x:e.clientX,y:e.clientY};});
     renderer.domElement.addEventListener('click',e=>{
       if(Math.abs(e.clientX-mouseDownPos.x)>5||Math.abs(e.clientY-mouseDownPos.y)>5)return;
+      if(hoveredPin){ openPanel(hoveredPin.country, hoveredPin.code); return; }
       if(!currentLabel)return;
       const isState=stateData.some(s=>s.name===currentLabel);
       openPanel(isState?'United States':currentLabel, isState?'us':(countryCodeMap[currentLabel]||null));
@@ -521,6 +523,7 @@
       const t=e.changedTouches[0];
       const dx=Math.abs(t.clientX-touchStart.x), dy=Math.abs(t.clientY-touchStart.y);
       if(dx>10||dy>10)return; // was a drag, not a tap
+      if(hoveredPin){ openPanel(hoveredPin.country, hoveredPin.code); return; }
       if(!currentLabel)return;
       const isState=stateData.some(s=>s.name===currentLabel);
       openPanel(isState?'United States':currentLabel, isState?'us':(countryCodeMap[currentLabel]||null));
@@ -542,6 +545,7 @@
           const hit=pinSprites.find(p=>p.sprite===pinHits[0].object);
           if(hit){
             const lbl=`${hit.capital} · ${hit.country}`;
+            hoveredPin={country:hit.country, code:hit.code};
             if(lbl!==currentLabel){
               currentLabel=lbl; label.textContent=lbl; label.classList.add('visible');
               paintCountry(null);
@@ -552,6 +556,7 @@
           }
         }
       }
+      hoveredPin=null;
       pinSprites.forEach(p=>p.sprite.material.color.set(0xffffff));
 
       const hits=raycaster.intersectObject(earth);
