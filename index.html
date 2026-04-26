@@ -161,8 +161,9 @@
         #include <map_fragment>
         float ocean = clamp((diffuseColor.b - max(diffuseColor.r, diffuseColor.g)) * 3.0, 0.0, 1.0);
         float land  = clamp((diffuseColor.g - diffuseColor.b) * 2.5, 0.0, 1.0);
-        diffuseColor.b = clamp(diffuseColor.b + ocean * 0.45, 0.0, 1.0);
-        diffuseColor.r = clamp(diffuseColor.r - ocean * 0.15, 0.0, 1.0);
+        diffuseColor.b = clamp(diffuseColor.b + ocean * 0.75, 0.0, 1.0);
+        diffuseColor.r = clamp(diffuseColor.r - ocean * 0.35, 0.0, 1.0);
+        diffuseColor.g = clamp(diffuseColor.g - ocean * 0.10, 0.0, 1.0);
         diffuseColor.g = clamp(diffuseColor.g + land  * 0.35, 0.0, 1.0);
         diffuseColor.r = clamp(diffuseColor.r - land  * 0.08, 0.0, 1.0);
       `);
